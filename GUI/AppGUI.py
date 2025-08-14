@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file 'c:\Users\18233\Documents\GitHub\DeltaForceMarketBot\GUI\AppGUI.ui'
+# Form implementation generated from reading ui file 'd:\DeltaForceMarketBot\GUI\AppGUI.ui'
 #
 # Created by: PyQt5 UI code generator 5.15.9
 #
@@ -119,10 +119,6 @@ class Ui_MainWindow(object):
         self.retranslateUi(MainWindow)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
 
-        # 添加千位分隔监听器
-        self.textEdit_ideal_price.textChanged.connect(lambda: self.format_price_input(self.textEdit_ideal_price))
-        self.textEdit_unacceptable_price.textChanged.connect(lambda: self.format_price_input(self.textEdit_unacceptable_price))
-
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
         MainWindow.setWindowTitle(_translate("MainWindow", "DFMarketBot"))
@@ -133,30 +129,3 @@ class Ui_MainWindow(object):
         self.is_key_mode.setText(_translate("MainWindow", "钥匙卡模式"))
         self.label_loop_gap.setText(_translate("MainWindow", "循环间隔"))
         self.is_half_coin_mode.setText(_translate("MainWindow", "使用哈夫币余额计算价格"))
-
-    # 自动格式化输入为带逗号的千位格式
-    def format_price_input(self, textEdit: QtWidgets.QTextEdit):
-        cursor = textEdit.textCursor()
-        pos = cursor.position()
-        old_text = textEdit.toPlainText()
-        raw_text = old_text.replace(',', '')
-        if not raw_text.isdigit():
-            return
-        formatted = "{:,}".format(int(raw_text))
-        if formatted == old_text:
-            return
-        old_commas_before_cursor = old_text[:pos].count(',')
-        new_commas_before_cursor = formatted[:pos].count(',')
-        delta = new_commas_before_cursor - old_commas_before_cursor
-        textEdit.blockSignals(True)
-        textEdit.setPlainText(formatted)
-        textEdit.blockSignals(False)
-        new_pos = pos + delta
-        new_pos = max(0, min(len(formatted), new_pos))  # 限制范围
-        cursor.setPosition(new_pos)
-        textEdit.setTextCursor(cursor)
-
-    # 外部调用读取值时使用，自动去除逗号
-    def get_plain_number(self, textEdit: QtWidgets.QTextEdit) -> int:
-        text = textEdit.toPlainText().replace(",", "")
-        return int(text) if text else 0

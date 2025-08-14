@@ -5,6 +5,7 @@ from PyQt5.QtCore import QObject, pyqtSignal, Qt, QThread
 from GUI.AppGUI import Ui_MainWindow
 from backend.BuyBot import BuyBot
 from backend.utils import *
+from GUI.formatter import format_price_input, get_plain_number
 import keyboard
 
 def is_admin():
@@ -174,6 +175,10 @@ def runApp():
     mainWindow.is_key_mode.setChecked(False)
     mainWindow.is_half_coin_mode.setChecked(False)
 
+    # 添加千位分隔监听器
+    mainWindow.textEdit_ideal_price.textChanged.connect(lambda: format_price_input(mainWindow.textEdit_ideal_price))
+    mainWindow.textEdit_unacceptable_price.textChanged.connect(lambda: format_price_input(mainWindow.textEdit_unacceptable_price))
+
     # 创建监控线程
     key_monitor = KeyMonitor()
     worker = Worker(BuyBot())
@@ -187,8 +192,8 @@ def runApp():
     key_monitor.key_pressed.connect(handle_key_event)
     
     def handle_text_change():
-        ideal = int(mainWindow.get_plain_number(mainWindow.textEdit_ideal_price))
-        unaccept = int(mainWindow.get_plain_number(mainWindow.textEdit_unacceptable_price))
+        ideal = int(get_plain_number(mainWindow.textEdit_ideal_price))
+        unaccept = int(get_plain_number(mainWindow.textEdit_unacceptable_price))
         loop_gap = int(mainWindow.textEdit_loop_gap.toPlainText())
         is_convertible = mainWindow.is_convertiable.isChecked()
         is_key_mode = mainWindow.is_key_mode.isChecked()
