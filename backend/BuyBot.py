@@ -7,18 +7,19 @@ else:
 import time
 import easyocr
 import numpy as np
+from copy import deepcopy
 
 class BuyBot:
     def __init__(self):
         self.reader = easyocr.Reader(['en'], gpu=True)
+        # 这里以后不再使用小数，使用像素数/屏幕分辨率来尽量提高精度
         self.range_isconvertible_lowest_price = [2179/2560, 1078/1440, 2308/2560, 1102/1440]
         self.range_notconvertible_lowest_price = [2179/2560, 1156/1440, 2308/2560, 1178/1440]
-        self.postion_isconvertible_max_shopping_number = [0.9085, 0.7222]
-        self.postion_isconvertible_min_shopping_number = [0.8095, 0.7222]  #"将Buybot.py中的"self.postion_isconvertible_min_shopping_number"临时改为[0.8095, 0.7222], 该值原本为[0.7921, 0.7222]"
-        self.postion_notconvertiable_max_shopping_number = [2329/2560, 1112/1440]
-        self.postion_notconvertiable_min_shopping_number = [2059/2560, 1112/1440] #"将Buybot.py中的"self.postion_notconvertiable_min_shopping_number"临时改为[2059/2560, 1112/1440], 该值原本为[2028/2560, 1112/1440]"
-        self.postion_isconvertible_buy_button = [2189/2560, 0.7979]
-        self.postion_notconvertiable_buy_button = [2186/2560, 1225/1440]
+        # 下面两个值为不可兑换商品的相关坐标，可兑换商品的相关坐标用offset_isconvertible进行计算
+        self.postion_max_shopping_number = [2324/2560, 1112/1440]
+        self.postion_min_shopping_number = [2028/2560, 1112/1440]
+        self.postion_buy_button = [2186/2560, 1225/1440]
+        self.offset_isconvertible = (1038 - 1112) / 1440
         self.postion_balance = [2200/2560, 70/1440]
         self.postion_balance_half_coin = [1930/2560, 363/1440, 2324/2560, 387/1440]
         self.lowest_price = None
@@ -68,20 +69,25 @@ class BuyBot:
         return self.balance_half_coin - previous_balance_half_coin
 
     def buy(self, is_convertible):
-        if is_convertible:
-            mouse_click(self.postion_isconvertible_max_shopping_number)
-            mouse_click(self.postion_isconvertible_buy_button)
-        else:
-            mouse_click(self.postion_notconvertiable_max_shopping_number)
-            mouse_click(self.postion_notconvertiable_buy_button)
+        self.buy_new(is_convertible, 200)
             
     def refresh(self, is_convertible):
+        self.buy_new(is_convertible, 31)
+
+    def buy_new(self, is_convertible:bool, target_buy_number:int) -> None:
+        '''
+        重构后的购买函数，可以执行1-200之间任意数量的购买
+        '''
+        # 计算购买数量position
+        pos = [(target_buy_number - 1) / 200 * (self.postion_max_shopping_number[0] - self.postion_min_shopping_number[0]) + self.postion_min_shopping_number[0], self.postion_min_shopping_number[1]]
         if is_convertible:
-            mouse_click(self.postion_isconvertible_min_shopping_number)
-            mouse_click(self.postion_isconvertible_buy_button)
-        else:
-            mouse_click(self.postion_notconvertiable_min_shopping_number)
-            mouse_click(self.postion_notconvertiable_buy_button)
+            pos[1] = pos[1] + self.offset_isconvertible
+        mouse_click(pos)
+        # 计算购买按钮position
+        pos = deepcopy(self.postion_buy_button)
+        if is_convertible:
+            pos[1] = pos[1] + self.offset_isconvertible
+        mouse_click(pos)
 
     def freerefresh(self, good_postion):
         # esc回到商店页面
@@ -91,8 +97,8 @@ class BuyBot:
 
 def main():
     bot = BuyBot()
-    print(bot.detect_price(is_convertible=True,debug_mode=True))
-    print(bot.detect_balance_half_coin(debug_mode=True)) 
+    time.sleep(5)
+    print(bot.buy_new(is_convertible = True, target_buy_number = 155))
 
 if __name__ == '__main__':
     main()

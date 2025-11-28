@@ -44,6 +44,7 @@ class Worker(QThread):
         self.ideal_price = 0
         self.unacceptable_price = 0
         self.loop_gap = 0
+        self.target_buy_number = 1
         self.is_convertible = True
         self.is_key_mode = False
         self.is_half_coin_mode = False
@@ -67,6 +68,8 @@ class Worker(QThread):
             self.lock.unlock()
             if first_loop == False:
                 first_loop == True
+            else:
+                current_target_buy_number = self.target_buy_number
             if running:
                 try:
                     # 获取当前参数值
@@ -109,10 +112,14 @@ class Worker(QThread):
                             print('当前价格：', lowest_price, '高于理想价格', current_ideal, ' 免费刷新价格')
                             self.buybot.freerefresh(good_postion=self.mouse_position)
                         else:
-                            print('当前价格：', lowest_price, '低于理想价格', current_ideal, ' 购买一张后循环结束')
-                            self.buybot.refresh(is_convertible=False)
-                            self.set_running(False)
-                            print('停止循环')
+                            print('当前价格：', lowest_price, '低于理想价格', current_ideal, ' 购买1次', end='')
+                            self.buybot.buy_new(is_convertible = self.is_convertible, target_buy_number = 1)
+                            current_target_buy_number -= 1
+                            if current_target_buy_number == 0: # 购买结束
+                                self.set_running(False)
+                                print(',达到购买数量，购买结束')
+                            else:
+                                print(',剩余购买次数{0}'.format(current_target_buy_number))
                     else:
                         # 正常模式
                         if lowest_price > current_unacceptable:
@@ -145,12 +152,13 @@ class Worker(QThread):
                     first_loop = True
                     buy_number = 0
 
-    def update_params(self, ideal, unacceptable, convertible, key_mode, half_coin_mode, loop_gap):
+    def update_params(self, ideal, unacceptable, convertible, key_mode, half_coin_mode, loop_gap, target_buy_number):
         """线程安全更新参数"""
         self.param_lock.lock()
         self.ideal_price = ideal
         self.unacceptable_price = unacceptable
         self.loop_gap = loop_gap
+        self.target_buy_number = target_buy_number
         self.is_convertible = convertible
         self.is_key_mode = key_mode
         self.is_half_coin_mode = half_coin_mode
@@ -171,9 +179,14 @@ def runApp():
     mainWindow.textEdit_ideal_price.setText('0')
     mainWindow.textEdit_unacceptable_price.setText('0')
     mainWindow.textEdit_loop_gap.setText('150')
+    mainWindow.textEdit_key_mode_buy_number.setText('1')
     mainWindow.is_convertiable.setChecked(True)
     mainWindow.is_key_mode.setChecked(False)
     mainWindow.is_half_coin_mode.setChecked(False)
+    
+    # 根据初始状态设置控件启用状态
+    mainWindow.textEdit_unacceptable_price.setEnabled(not mainWindow.is_key_mode.isChecked())
+    mainWindow.textEdit_key_mode_buy_number.setEnabled(mainWindow.is_key_mode.isChecked())
 
     # 添加千位分隔监听器
     mainWindow.textEdit_ideal_price.textChanged.connect(lambda: format_price_input(mainWindow.textEdit_ideal_price))
@@ -191,21 +204,32 @@ def runApp():
 
     key_monitor.key_pressed.connect(handle_key_event)
     
+    def handle_key_mode_change():
+        """处理钥匙卡模式状态变更"""
+        is_key_mode = mainWindow.is_key_mode.isChecked()
+        # 根据钥匙卡模式状态启用/禁用相应控件
+        mainWindow.textEdit_unacceptable_price.setEnabled(not is_key_mode)
+        mainWindow.textEdit_key_mode_buy_number.setEnabled(is_key_mode)
+        # 触发文本变更事件以更新worker参数
+        handle_text_change()
+
     def handle_text_change():
         ideal = int(get_plain_number(mainWindow.textEdit_ideal_price))
         unaccept = int(get_plain_number(mainWindow.textEdit_unacceptable_price))
         loop_gap = int(mainWindow.textEdit_loop_gap.toPlainText())
+        target_buy_number = int(get_plain_number(mainWindow.textEdit_key_mode_buy_number))
         is_convertible = mainWindow.is_convertiable.isChecked()
         is_key_mode = mainWindow.is_key_mode.isChecked()
         is_half_coin_mode = mainWindow.is_half_coin_mode.isChecked()
-        worker.update_params(ideal, unaccept, is_convertible, is_key_mode, is_half_coin_mode, loop_gap)
+        worker.update_params(ideal, unaccept, is_convertible, is_key_mode, is_half_coin_mode, loop_gap, target_buy_number)
 
-    # 确保两个输入框都连接
+    # 确保所有相关控件都连接了变更处理函数
     mainWindow.textEdit_ideal_price.textChanged.connect(handle_text_change)
     mainWindow.textEdit_unacceptable_price.textChanged.connect(handle_text_change)
     mainWindow.textEdit_loop_gap.textChanged.connect(handle_text_change)
+    mainWindow.textEdit_key_mode_buy_number.textChanged.connect(handle_text_change)
     mainWindow.is_convertiable.stateChanged.connect(handle_text_change)
-    mainWindow.is_key_mode.stateChanged.connect(handle_text_change)
+    mainWindow.is_key_mode.stateChanged.connect(handle_key_mode_change)
     mainWindow.is_half_coin_mode.stateChanged.connect(handle_text_change)
 
     window.show()
