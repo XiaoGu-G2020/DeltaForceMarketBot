@@ -33,6 +33,7 @@ class BuyBot:
             text = text.replace(',', '')
             text = text.replace('.', '')
             text = text.replace(' ', '')
+            text = text.replace('g', '9')
         except:
             text = None
         if debug_mode == True:
