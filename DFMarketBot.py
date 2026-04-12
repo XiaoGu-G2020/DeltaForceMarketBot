@@ -5,6 +5,7 @@ from PyQt5.QtCore import QObject, pyqtSignal, Qt, QThread
 from GUI.AppGUI import Ui_MainWindow
 from backend.BuyBot import BuyBot
 from backend.utils import *
+from backend.log import log_info, log_error, log_exception, log_critical, cleanup_old_logs
 from GUI.formatter import format_price_input, get_plain_number
 import keyboard
 
@@ -26,9 +27,11 @@ class KeyMonitor(QObject):
 
     def handle_key(self, event):
         if event.name == 'f8':
+            log_info('用户按下 F8 - 开始循环')
             self.key_pressed.emit(0)
             print('开始循环')
         elif event.name == 'f9':
+            log_info('用户按下 F9 - 停止循环')
             self.key_pressed.emit(1)
             print('停止循环')
 
@@ -54,13 +57,18 @@ class Worker(QThread):
 
     def record_mouse_position(self):
         """记录鼠标位置"""
-        self.mouse_position_lock.lock()
-        self.mouse_position = get_mouse_position()
-        self.mouse_position_lock.unlock()
+        try:
+            self.mouse_position_lock.lock()
+            self.mouse_position = get_mouse_position()
+            self.mouse_position_lock.unlock()
+            log_info(f'记录鼠标位置: {self.mouse_position}')
+        except Exception as e:
+            log_exception('记录鼠标位置异常')
 
     def run(self):
         first_loop = True
         buy_number = 0
+        log_info('Worker 线程启动')
         while True:
             # 获取运行状态
             self.lock.lock()
@@ -94,44 +102,60 @@ class Worker(QThread):
                             if lowest_price == 0:
                                 # 直接看市场底价
                                 lowest_price = self.buybot.detect_price(is_convertible=current_convertible, debug_mode=False)
+                                log_info(f'上一次购买失败，直接看市场底价: {lowest_price}')
                                 print("上一次购买失败，直接看市场底价:", lowest_price, end=" ")
                             else:
+                                log_info(f'哈夫币余额差值计算价格: {lowest_price}')
                                 print("哈夫币余额差值计算价格:", lowest_price, end=" ")
-                        except:
+                        except Exception as e:
+                            log_exception('哈夫币余额计算异常，回退到直接识别价格')
                             # 直接看市场底价
                             lowest_price = self.buybot.detect_price(is_convertible=current_convertible, debug_mode=False)
                             print("余额计算出现异常，直接看市场底价:", lowest_price, end=" ")
                     else:
                         # 直接看市场底价
                         lowest_price = self.buybot.detect_price(is_convertible=current_convertible, debug_mode=False)
+                        log_info(f'直接看市场底价: {lowest_price}')
                         print("直接看市场底价:", lowest_price, end=" ")
                     
                     if current_key_mode:
                         # 钥匙卡模式
                         if lowest_price > current_ideal:
-                            print('当前价格：', lowest_price, '高于理想价格', current_ideal, ' 免费刷新价格')
+                            msg = f'当前价格：{lowest_price} 高于理想价格 {current_ideal} 免费刷新价格'
+                            log_info(msg)
+                            print(msg)
                             self.buybot.freerefresh(good_postion=self.mouse_position)
                         else:
-                            print('当前价格：', lowest_price, '低于理想价格', current_ideal, ' 购买1次', end='')
+                            msg = f'当前价格：{lowest_price} 低于理想价格 {current_ideal} 购买1次'
+                            log_info(msg)
+                            print(msg, end='')
                             self.buybot.buy_new(is_convertible = self.is_convertible, target_buy_number = 1)
                             current_target_buy_number -= 1
                             if current_target_buy_number == 0: # 购买结束
                                 self.set_running(False)
+                                log_info('达到购买数量，购买结束')
                                 print(',达到购买数量，购买结束')
                             else:
+                                log_info(f'剩余购买次数: {current_target_buy_number}')
                                 print(',剩余购买次数{0}'.format(current_target_buy_number))
                     else:
                         # 正常模式
                         if lowest_price > current_unacceptable:
-                            print('高于最高价格', current_unacceptable, ' 免费刷新价格')
+                            msg = f'价格 {lowest_price} 高于最高价格 {current_unacceptable} 免费刷新价格'
+                            log_info(msg)
+                            print(msg)
                             self.buybot.freerefresh(good_postion=self.mouse_position)
                             buy_number = 0
                         elif lowest_price > current_ideal:
-                            print('高于理想价格', current_ideal, ' 刷新价格')
+                            msg = f'价格 {lowest_price} 高于理想价格 {current_ideal} 刷新价格'
+                            log_info(msg)
+                            print(msg)
                             self.buybot.refresh(is_convertible=current_convertible)
                             buy_number = 31 #原始值为 购买子弹价格/1 ，修改为 购买子弹价格/31
                         else:
-                            print('低于理想价格', current_ideal, ' 开始购买')
+                            msg = f'价格 {lowest_price} 低于理想价格 {current_ideal} 开始购买'
+                            log_info(msg)
+                            print(msg)
                             self.buybot.buy(is_convertible=current_convertible)
                             buy_number = 200
 
@@ -140,10 +164,13 @@ class Worker(QThread):
                         first_loop = False
                 except Exception as e:
                     if str(e) == '识别失败':  # 识别失败, 建议检查物品是否可兑换
+                        log_error('OCR 识别失败，执行免费刷新')
                         self.msleep(self.loop_gap)
                         self.buybot.freerefresh(good_postion=self.mouse_position)
                     else:
-                        print(f"操作失败: {str(e)}")
+                        error_msg = f"操作失败: {str(e)}"
+                        log_exception(error_msg)
+                        print(error_msg)
                 self.msleep(self.loop_gap)
             else:
                 self.msleep(100)
@@ -170,6 +197,16 @@ class Worker(QThread):
         self.lock.unlock()
 
 def runApp():
+    log_info('===== 程序启动 =====')
+    
+    # 清理30天前的旧日志文件
+    try:
+        deleted_count = cleanup_old_logs(days_to_keep=30)
+        if deleted_count > 0:
+            log_info(f'已清理 {deleted_count} 个旧日志文件')
+    except Exception as e:
+        log_error(f'清理旧日志失败: {str(e)}')
+    
     app = QtWidgets.QApplication([])
     window = QtWidgets.QMainWindow()
     mainWindow = Ui_MainWindow()
@@ -194,8 +231,11 @@ def runApp():
 
     # 创建监控线程
     key_monitor = KeyMonitor()
-    worker = Worker(BuyBot())
+    buybot = BuyBot()
+    worker = Worker(buybot)
     
+    log_info(f'BuyBot 和 Worker 线程已创建')
+
     # 信号连接
     def handle_key_event(x):
         if x == 0:
@@ -237,13 +277,26 @@ def runApp():
     app.exec_()
 
 def main():
-    return runApp()
+    try:
+        return runApp()
+    except Exception as e:
+        log_exception('程序运行异常')
+        raise
 
 if __name__ == "__main__":
     if not is_admin():
         # 尝试重新以管理员身份启动
+        log_info('请求管理员权限')
         ctypes.windll.shell32.ShellExecuteW(
             None, "runas", sys.executable, " ".join(sys.argv), None, 1)
         sys.exit(0)
+    
+    log_info('正在初始化程序')
     print("正在初始化")
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception as e:
+        log_critical(f'程序启动失败，无法恢复: {str(e)}')
+        print(f"程序启动失败: {str(e)}")
+        print("请查看 logs 目录下的日志文件获取详细信息")
+        sys.exit(1)
