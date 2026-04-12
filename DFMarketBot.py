@@ -1,5 +1,10 @@
 import sys
 import ctypes
+
+# 在导入 PyQt5 和 backend 模块之前初始化 DLL 环境
+from backend.init_env import init_dll_environment
+init_dll_environment()
+
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import QObject, pyqtSignal, Qt, QThread
 from GUI.AppGUI import Ui_MainWindow
