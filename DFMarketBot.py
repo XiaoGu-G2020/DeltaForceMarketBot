@@ -8,7 +8,6 @@ init_dll_environment()
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import QObject, pyqtSignal, Qt, QThread
 from GUI.AppGUI import Ui_MainWindow
-from backend.BuyBot import BuyBot
 from backend.utils import *
 from GUI.formatter import format_price_input, get_plain_number
 import keyboard
@@ -197,9 +196,15 @@ def runApp():
     mainWindow.textEdit_ideal_price.textChanged.connect(lambda: format_price_input(mainWindow.textEdit_ideal_price))
     mainWindow.textEdit_unacceptable_price.textChanged.connect(lambda: format_price_input(mainWindow.textEdit_unacceptable_price))
 
+    # 延迟导入并实例化 BuyBot,确保所有环境变量已生效
+    print("正在加载 OCR 引擎...")
+    from backend.BuyBot import BuyBot
+    buybot_instance = BuyBot()
+    print("OCR 引擎加载完成")
+
     # 创建监控线程
     key_monitor = KeyMonitor()
-    worker = Worker(BuyBot())
+    worker = Worker(buybot_instance)
     
     # 信号连接
     def handle_key_event(x):
