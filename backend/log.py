@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 
 import os
+import sys
+import threading
 import traceback
 from datetime import datetime
 
@@ -18,7 +20,12 @@ _LOG_LEVELS = {
     'ERROR': 3,
     'CRITICAL': 4
 }
-_current_log_level = 'INFO'  # 默认级别，可以通过 set_log_level() 修改
+# 默认级别：可通过 set_log_level() 或环境变量 MARKET_BOT_LOG_LEVEL 修改
+_current_log_level = os.environ.get('MARKET_BOT_LOG_LEVEL', 'INFO').upper()
+if _current_log_level not in _LOG_LEVELS:
+    _current_log_level = 'INFO'
+
+_write_lock = threading.Lock()  # 保证多线程下日志写入不交错
 
 
 def set_log_level(level):
@@ -100,13 +107,24 @@ def _write_log(level, message):
     if _LOG_LEVELS.get(level, 0) < _LOG_LEVELS.get(_current_log_level, 1):
         return
     
-    log_path = _get_log_file_path()
-    
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]  # 精确到毫秒
     log_entry = f"{timestamp} [{level.upper()}] {message}\n"
     
-    with open(log_path, 'a', encoding='utf-8') as f:
-        f.write(log_entry)
+    with _write_lock:
+        try:
+            log_path = _get_log_file_path()
+            with open(log_path, 'a', encoding='utf-8') as f:
+                f.write(log_entry)
+        except Exception:
+            # 日志写入失败（磁盘满、文件被占用等）不应影响主程序
+            pass
+    
+    # 同步输出到控制台，替代调用方重复的 print
+    try:
+        print(log_entry, end='')
+        sys.stdout.flush()
+    except Exception:
+        pass
 
 
 def log_debug(message):
@@ -169,10 +187,20 @@ def log_exception(message=None, exc_info=None):
         message (str, optional): 自定义错误消息
         exc_info: 异常信息,默认为当前异常
     """
-    if message:
-        error_msg = f"{message}\n{traceback.format_exc()}"
+    if exc_info is not None:
+        tb = ''.join(traceback.format_exception(type(exc_info), exc_info, exc_info.__traceback__))
     else:
-        error_msg = traceback.format_exc()
+        tb = traceback.format_exc()
+        if 'NoneType: None' in tb:
+            # 当前不在异常上下文中，避免写入无意义的占位堆栈
+            tb = ''
+    
+    if message and tb:
+        error_msg = f"{message}\n{tb}".rstrip()
+    elif tb:
+        error_msg = tb.rstrip()
+    else:
+        error_msg = message if message else '未知异常（无异常上下文）'
     
     _write_log('ERROR', error_msg)
 
@@ -215,6 +243,6 @@ def cleanup_old_logs(days_to_keep=30):
                     os.remove(filepath)
                     deleted_count += 1
                 except Exception as e:
-                    print(f"删除日志文件失败 {filename}: {str(e)}")
+                    log_error(f"删除日志文件失败 {filename}: {str(e)}")
     
     return deleted_count

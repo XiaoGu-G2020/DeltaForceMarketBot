@@ -29,11 +29,9 @@ class KeyMonitor(QObject):
         if event.name == 'f8':
             log_info('用户按下 F8 - 开始循环')
             self.key_pressed.emit(0)
-            print('开始循环')
         elif event.name == 'f9':
             log_info('用户按下 F9 - 停止循环')
             self.key_pressed.emit(1)
-            print('停止循环')
 
 class Worker(QThread):
     update_signal = pyqtSignal(int)
@@ -106,64 +104,54 @@ class Worker(QThread):
                                 # 差值非正说明上一次购买失败或余额异常，直接看市场底价
                                 lowest_price = self.buybot.detect_price(is_convertible=current_convertible, debug_mode=False)
                                 log_info(f'上一次购买失败，直接看市场底价: {lowest_price}')
-                                print("上一次购买失败，直接看市场底价:", lowest_price, end=" ")
                             else:
                                 log_info(f'哈夫币余额差值计算价格: {lowest_price}')
-                                print("哈夫币余额差值计算价格:", lowest_price, end=" ")
                         except Exception as e:
                             log_exception('哈夫币余额计算异常，回退到直接识别价格')
                             # 直接看市场底价
                             lowest_price = self.buybot.detect_price(is_convertible=current_convertible, debug_mode=False)
-                            print("余额计算出现异常，直接看市场底价:", lowest_price, end=" ")
+                            log_info(f'回退市场底价: {lowest_price}')
                     else:
                         # 哈夫币模式但本轮无法用差值计算时，先读一次基线余额，供下一轮差值计算使用
                         if current_half_coin_mode and (self.buybot.balance_half_coin is None):
-                            print("读取哈夫币基线余额...")
+                            log_info('读取哈夫币基线余额...')
                             self.buybot.detect_balance_half_coin()
                         # 直接看市场底价
                         lowest_price = self.buybot.detect_price(is_convertible=current_convertible, debug_mode=False)
                         log_info(f'直接看市场底价: {lowest_price}')
-                        print("直接看市场底价:", lowest_price, end=" ")
                     
                     if current_key_mode:
                         # 钥匙卡模式
                         if lowest_price > current_ideal:
                             msg = f'当前价格：{lowest_price} 高于理想价格 {current_ideal} 免费刷新价格'
                             log_info(msg)
-                            print(msg)
                             self.buybot.freerefresh(good_postion=self.mouse_position)
                         else:
                             msg = f'当前价格：{lowest_price} 低于理想价格 {current_ideal} 购买1次'
                             log_info(msg)
-                            print(msg, end='')
                             self.buybot.buy_new(is_convertible = self.is_convertible, target_buy_number = 1)
                             buy_number = 1 # 记录本轮购买数，供下一轮哈夫币差值法计算钥匙卡实际价格
                             current_target_buy_number -= 1
                             if current_target_buy_number == 0: # 购买结束
-                                self.set_running(False)
                                 log_info('达到购买数量，购买结束')
-                                print(',达到购买数量，购买结束')
+                                self.set_running(False)
                             else:
                                 log_info(f'剩余购买次数: {current_target_buy_number}')
-                                print(',剩余购买次数{0}'.format(current_target_buy_number))
                     else:
                         # 正常模式
                         if lowest_price > current_unacceptable:
                             msg = f'价格 {lowest_price} 高于最高价格 {current_unacceptable} 免费刷新价格'
                             log_info(msg)
-                            print(msg)
                             self.buybot.freerefresh(good_postion=self.mouse_position)
                             buy_number = 0
                         elif lowest_price > current_ideal:
                             msg = f'价格 {lowest_price} 高于理想价格 {current_ideal} 刷新价格'
                             log_info(msg)
-                            print(msg)
                             self.buybot.refresh(is_convertible=current_convertible)
                             buy_number = 31 #原始值为 购买子弹价格/1 ，修改为 购买子弹价格/31
                         else:
                             msg = f'价格 {lowest_price} 低于理想价格 {current_ideal} 开始购买'
                             log_info(msg)
-                            print(msg)
                             self.buybot.buy(is_convertible=current_convertible)
                             buy_number = 200
 
@@ -178,7 +166,6 @@ class Worker(QThread):
                     else:
                         error_msg = f"操作失败: {str(e)}"
                         log_exception(error_msg)
-                        print(error_msg)
                 self.msleep(self.loop_gap)
             else:
                 self.msleep(100)
@@ -192,6 +179,15 @@ class Worker(QThread):
     def update_params(self, ideal, unacceptable, convertible, key_mode, half_coin_mode, loop_gap, target_buy_number):
         """线程安全更新参数"""
         self.param_lock.lock()
+        params_changed = (
+            self.ideal_price != ideal or
+            self.unacceptable_price != unacceptable or
+            self.loop_gap != loop_gap or
+            self.target_buy_number != target_buy_number or
+            self.is_convertible != convertible or
+            self.is_key_mode != key_mode or
+            self.is_half_coin_mode != half_coin_mode
+        )
         self.ideal_price = ideal
         self.unacceptable_price = unacceptable
         self.loop_gap = loop_gap
@@ -200,11 +196,17 @@ class Worker(QThread):
         self.is_key_mode = key_mode
         self.is_half_coin_mode = half_coin_mode
         self.param_lock.unlock()
+        if params_changed:
+            log_info(f'参数更新: 理想价格={ideal} 最高价格={unacceptable} 循环间隔={loop_gap}ms '
+                     f'可兑换={convertible} 钥匙卡模式={key_mode} 哈夫币模式={half_coin_mode} 购买数量={target_buy_number}')
     def set_running(self, state):
         """线程安全更新运行状态"""
         self.lock.lock()
+        changed = self._is_running != state
         self._is_running = state
         self.lock.unlock()
+        if changed:
+            log_info(f'运行状态变更: running={state}')
 
 def runApp():
     log_info('===== 程序启动 =====')
@@ -284,6 +286,7 @@ def runApp():
 
     window.show()
     worker.start()
+    app.aboutToQuit.connect(lambda: log_info('===== 程序退出 ====='))
     app.exec_()
 
 def main():
@@ -302,7 +305,6 @@ if __name__ == "__main__":
         sys.exit(0)
     
     log_info('正在初始化程序')
-    print("正在初始化")
     try:
         sys.exit(main())
     except Exception as e:

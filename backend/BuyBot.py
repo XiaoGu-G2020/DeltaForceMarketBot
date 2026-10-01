@@ -2,10 +2,10 @@
 
 if __name__ == '__main__':
     from utils import *
-    from log import log_info, log_error, log_exception, log_critical
+    from log import log_info, log_warning, log_error, log_exception, log_critical
 else:
     from backend.utils import *
-    from backend.log import log_info, log_error, log_exception, log_critical
+    from backend.log import log_info, log_warning, log_error, log_exception, log_critical
 import time
 import easyocr
 import numpy as np
@@ -28,7 +28,6 @@ class BuyBot:
             self.lowest_price = None
             self.balance_half_coin = None
             log_info('BuyBot 初始化完成')
-            print('初始化完成')
         except Exception as e:
             log_critical(f'BuyBot 初始化失败，OCR引擎无法加载: {str(e)}')
             raise
@@ -41,8 +40,9 @@ class BuyBot:
             text = text.replace('.', '')
             text = text.replace(' ', '')
             text = text.replace('g', '9')
-        except:
+        except Exception as e:
             text = None
+            log_warning(f'OCR 识别异常，返回 None: {e}')
         if debug_mode == True:
             print(text)
         return int(text) if text else None
@@ -59,7 +59,6 @@ class BuyBot:
             if self.lowest_price == None:
                 error_msg = '识别失败, 建议检查物品是否可兑换'
                 log_error(error_msg)
-                print(error_msg)
                 raise Exception('识别失败')
             return int(self.lowest_price)
         except Exception as e:
@@ -77,8 +76,7 @@ class BuyBot:
 
             if self.balance_half_coin == None:
                 warning_msg = '哈夫币余额检测识别失败或不稳定，建议关闭余额识别相关功能'
-                log_error(warning_msg)
-                print(warning_msg)
+                log_warning(warning_msg)
             return self.balance_half_coin
         except Exception as e:
             log_exception('哈夫币余额识别异常')
