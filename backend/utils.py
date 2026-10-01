@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 
 import pyautogui
+import mss
+from PIL import Image
 
 def is_windowized(window_title:str):
     '''
@@ -27,7 +29,12 @@ def get_screenshot(debug_mode = False):
     全屏截图函数
     '''
     # 对整个屏幕进行截图
-    screenshot = pyautogui.screenshot()
+    with mss.mss() as sct:
+        monitor = sct.monitors[0]
+        sct_img = sct.grab(monitor)
+        # 转换为 PIL Image 对象以保持与原接口一致
+        screenshot = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
+        
     if debug_mode:
         screenshot.save('screenshot.png')
     return screenshot
@@ -45,7 +52,14 @@ def get_windowshot(range:list, debug_mode = False):
                  int(screen_size.height * range[1]), 
                  int(screen_size.width * range[2]), 
                  int(screen_size.height * range[3])]
-    screenshot = pyautogui.screenshot(region=(range[0], range[1], range[2]-range[0], range[3]-range[1]))
+    
+    with mss.mss() as sct:
+        # mss 的 grab 使用的是 monitor 格式：{'top': y, 'left': x, 'width': w, 'height': h}
+        monitor = {"top": range[1], "left": range[0], "width": range[2] - range[0], "height": range[3] - range[1]}
+        sct_img = sct.grab(monitor)
+        # 转换为 PIL Image 对象
+        screenshot = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
+
     if debug_mode:
         screenshot.save('screenshot.png')
     return screenshot

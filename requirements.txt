@@ -3,3 +3,5 @@ numpy==2.2.5
 PyQt5==5.15.11
 pyautogui==0.9.54
 keyboard==0.13.5
+mss==9.0.2
+Pillow==10.3.0
