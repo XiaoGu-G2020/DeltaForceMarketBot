@@ -74,9 +74,10 @@ class Worker(QThread):
             self.lock.lock()
             running = self._is_running
             self.lock.unlock()
-            if first_loop == False:
-                first_loop = True
-            else:
+            # 只在启动后的第一轮初始化一次目标购买次数（钥匙卡模式倒计时依赖它，不能每轮覆盖）
+            # 注意：这里不能把 first_loop 重新置为 True，否则每轮都会被当成首循环，
+            # 哈夫币差值分支的 not first_loop 条件永远无法满足
+            if first_loop:
                 current_target_buy_number = self.target_buy_number
             if running:
                 try:
@@ -93,14 +94,16 @@ class Worker(QThread):
                     mouse_click(self.mouse_position, num = 1)
                     
                     # 获取商品价格
-                    if current_half_coin_mode and (not first_loop) and (buy_number != 0):
+                    if current_half_coin_mode and (not first_loop) and (buy_number != 0) and (self.buybot.balance_half_coin is not None):
                         # 使用哈夫币余额差值计算价格
                         try:
                             previous_balance_half_coin = self.buybot.balance_half_coin
                             current_balance_half_coin = self.buybot.detect_balance_half_coin()
+                            if current_balance_half_coin is None:
+                                raise Exception('哈夫币余额识别失败')
                             lowest_price = (previous_balance_half_coin - current_balance_half_coin)/buy_number
-                            if lowest_price == 0:
-                                # 直接看市场底价
+                            if lowest_price <= 0:
+                                # 差值非正说明上一次购买失败或余额异常，直接看市场底价
                                 lowest_price = self.buybot.detect_price(is_convertible=current_convertible, debug_mode=False)
                                 log_info(f'上一次购买失败，直接看市场底价: {lowest_price}')
                                 print("上一次购买失败，直接看市场底价:", lowest_price, end=" ")
@@ -113,6 +116,10 @@ class Worker(QThread):
                             lowest_price = self.buybot.detect_price(is_convertible=current_convertible, debug_mode=False)
                             print("余额计算出现异常，直接看市场底价:", lowest_price, end=" ")
                     else:
+                        # 哈夫币模式但本轮无法用差值计算时，先读一次基线余额，供下一轮差值计算使用
+                        if current_half_coin_mode and (self.buybot.balance_half_coin is None):
+                            print("读取哈夫币基线余额...")
+                            self.buybot.detect_balance_half_coin()
                         # 直接看市场底价
                         lowest_price = self.buybot.detect_price(is_convertible=current_convertible, debug_mode=False)
                         log_info(f'直接看市场底价: {lowest_price}')
@@ -130,6 +137,7 @@ class Worker(QThread):
                             log_info(msg)
                             print(msg, end='')
                             self.buybot.buy_new(is_convertible = self.is_convertible, target_buy_number = 1)
+                            buy_number = 1 # 记录本轮购买数，供下一轮哈夫币差值法计算钥匙卡实际价格
                             current_target_buy_number -= 1
                             if current_target_buy_number == 0: # 购买结束
                                 self.set_running(False)
@@ -178,6 +186,8 @@ class Worker(QThread):
                 if first_loop == False:
                     first_loop = True
                     buy_number = 0
+                    # 基线余额作废，下次F8后重新建立，避免用旧基线算出错误差值
+                    self.buybot.balance_half_coin = None
 
     def update_params(self, ideal, unacceptable, convertible, key_mode, half_coin_mode, loop_gap, target_buy_number):
         """线程安全更新参数"""
